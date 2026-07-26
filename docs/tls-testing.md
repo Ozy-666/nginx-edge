@@ -137,52 +137,78 @@ Relevant if you run your own resolver or authoritative zone:
 - **[Zonemaster](https://zonemaster.net/)** - run by IIS and AFNIC; thorough
   delegation and zone correctness checks.
 
-## When scanners disagree: a worked example
+## When a scanner is right: a worked example
 
-Automated graders apply generic heuristics, and a deliberate configuration can
-trip them. A real case from this deployment:
+A finding from an automated grader is a hypothesis. Sometimes reproducing it
+proves it wrong; sometimes it proves it right, and the reproduction is what
+tells you which. A real case from this deployment, where the scanner won:
 
-**Hardenize reported:** *"Reconfigure server to use forward secrecy and
-authenticated encryption … the cipher suites providing forward secrecy (ECDHE or
-DHE) and authenticated encryption (GCM or CHACHA20) are at the top. The server
-must also be configured to select the best-available suite."*
+**Hardenize reported:** *"Server doesn't enforce cipher suite preferences.
+Servers that don't enforce cipher suite preferences select the first cipher
+suite they support from the list provided by clients."*
 
-**testssl.sh, on the same host:**
+**testssl.sh, on the same host, appeared to contradict it:**
 
 ```
 TLSv1.2 (server order -- server prioritizes ChaCha ciphers when preferred by clients)
- xc02b   ECDHE-ECDSA-AES128-GCM-SHA256   ECDH 384   AESGCM     128
- xcca9   ECDHE-ECDSA-CHACHA20-POLY1305   ECDH 384   ChaCha20   256
-
  Has server cipher order?     yes (OK) -- only for < TLS 1.3
 ```
 
-Every suite offered is already ECDHE (forward secrecy) and AEAD (GCM or
-ChaCha20). There is no CBC suite, no static-RSA key exchange, and nothing weaker
-to promote above anything else. Server cipher order is enforced.
-
-What triggered the warning is BoringSSL's **equal-preference group**:
+The configuration was a BoringSSL equal-preference group with server preference
+turned off:
 
 ```nginx
 ssl_ciphers '[ECDHE-ECDSA-AES128-GCM-SHA256|ECDHE-ECDSA-CHACHA20-POLY1305]:...';
+ssl_prefer_server_ciphers off;
 ```
 
-The bracket declares those two suites equally acceptable, so the client picks
-between them while the server still controls the ordering of everything else.
-testssl.sh recognises the pattern by name. A generic scanner sees only that the
-negotiated suite changes with client order, and concludes the server is not
-expressing a preference - it cannot distinguish *"the server has no opinion"*
-from *"the server deliberately declared these two equivalent."*
+The tempting conclusion is that the bracket is doing something clever that the
+generic scanner cannot see: the server declaring two suites equally good and
+letting the client choose. **That conclusion is wrong**, and the BoringSSL
+source settles it - `choose_cipher()` in `ssl/handshake_server.cc`:
 
-The configuration is correct as it stands, and "fixing" it would be a
-regression: forcing strict server preference pushes clients without AES
-hardware onto AES-GCM instead of ChaCha20-Poly1305, costing performance for zero
-security benefit, since both suites are ECDHE + AEAD.
+```c
+if (ssl->options & SSL_OP_CIPHER_SERVER_PREFERENCE) {
+    prio           = server_pref->ciphers.get();
+    in_group_flags = server_pref->in_group_flags;   // groups ACTIVE
+    allow          = client_pref;
+} else {
+    prio           = client_pref;
+    in_group_flags = nullptr;                       // groups IGNORED
+    allow          = server_pref->ciphers.get();
+}
+```
 
-**The general lesson:** a scanner finding is a hypothesis, not a verdict.
-Reproduce it with a tool that shows you the actual negotiation before changing
-anything. Configuring to satisfy a grader rather than to protect users is how
-deployments get slower and no safer.
+With server preference off, `in_group_flags` is `nullptr`. **The equal-preference
+brackets are discarded entirely.** They parse, `nginx -t` passes, and they have
+no effect whatsoever - the client's order governs every selection. Hardenize was
+describing exactly that.
+
+testssl.sh was not wrong either; it was answering a narrower question. Its own
+parenthetical gives it away - *"prioritizes ChaCha ciphers when preferred by
+clients"* is a description of client preference winning. Its "server cipher
+order? yes" reflects a ChaCha-preference heuristic, not `in_group_flags` being
+live.
+
+**The fix gives you both properties at once:**
+
+```nginx
+ssl_prefer_server_ciphers on;   # activates in_group_flags
+```
+
+Now the server enforces the order *between* groups, while inside a bracket the
+client still chooses - so a machine with AES-NI takes AES-GCM and a phone
+without it takes ChaCha20. That is what equal-preference groups are for, and it
+only works with server preference enabled. There is no trade-off to weigh here;
+the previous configuration was strictly worse.
+
+**The lesson, stated honestly:** a scanner finding is a hypothesis, and so is
+your explanation for dismissing it. "The scanner's heuristic is too generic to
+understand my clever configuration" is a satisfying story and it is sometimes
+true - but it is exactly the reasoning that lets a real misconfiguration survive
+review. Reproduce the finding against the source or the wire, not against your
+own intent. Two tools disagreeing is a signal to go read the implementation, not
+to pick the answer you prefer.
 
 ## A practical routine
 
