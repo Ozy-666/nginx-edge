@@ -33,10 +33,47 @@ ports, and STARTTLS services. It also enumerates the actual negotiated suites
 rather than inferring a grade.
 
 ```sh
-docker run --rm -it drwetter/testssl.sh --full example.com
-# or, targeting a specific service:
+git clone --depth 1 https://github.com/testssl/testssl.sh
+cd testssl.sh && ./testssl.sh --full example.com
+
+# Fast, high-signal subset: protocols, forward secrecy, groups/KEMs
+./testssl.sh -p -f -g --quiet example.com
+
+# Or targeting a specific service:
 ./testssl.sh --starttls smtp mail.example.com:587
 ```
+
+The `-g` flag is the one to know if you care about post-quantum — it reports
+negotiated KEMs separately from classical curves, which no browser-facing
+grader currently does. Abridged output from a build configured as in
+`../examples/tls-hardening.conf`:
+
+```
+ TLS 1.2                      offered (OK)
+ TLS 1.3                      offered (OK): final
+ QUIC                         Local problem: No OpenSSL QUIC support
+ FS is offered (OK)           TLS_AES_256_GCM_SHA384
+                              TLS_CHACHA20_POLY1305_SHA256
+                              ECDHE-ECDSA-CHACHA20-POLY1305
+                              TLS_AES_128_GCM_SHA256
+                              ECDHE-ECDSA-AES128-GCM-SHA256
+ KEMs offered                 X25519MLKEM768
+ Elliptic curves offered:     prime256v1 secp384r1 X25519
+ TLS 1.3 sig_algs offered:    ECDSA+SHA256
+```
+
+Two things to read out of that:
+
+- `KEMs offered: X25519MLKEM768` is the confirmation that post-quantum key
+  exchange is actually negotiating, not merely configured. Nothing in an SSL
+  Labs report tells you this.
+- `QUIC: Local problem: No OpenSSL QUIC support` — testssl.sh does not speak
+  QUIC either. **No general-purpose grader currently tests your HTTP/3 path.**
+  You have to do it yourself with `curl --http3-only`.
+
+testssl.sh also reads the DNS HTTPS/SVCB record, so it will show your published
+`ech=` value and ALPN list — a quick way to confirm the ECHConfigList in DNS
+matches what nginx is serving.
 
 **[Hardenize](https://www.hardenize.com/)** — built by Ivan Ristić, who created
 SSL Labs, and now part of Red Sift. Much broader scope: TLS plus DNS, DNSSEC,

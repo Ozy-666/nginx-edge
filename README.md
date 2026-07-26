@@ -68,6 +68,36 @@ The costs are real and worth stating plainly:
 - **`ssl_conf_command Ciphersuites` is a no-op**, because BoringSSL does not
   expose TLS 1.3 suite ordering; `ssl_ciphers` affects TLS 1.2 only.
 
+### Post-quantum key exchange
+
+The complete set of groups supported by BoringSSL `0.20260713.0`, read from
+`kNamedGroups` in `ssl/ssl_key_share.cc`. All seven are accepted by
+`ssl_ecdh_curve` — verified with `nginx -t` on this build — but only one belongs
+in a public config:
+
+| Group | Kind | Verdict |
+|---|---|---|
+| `X25519MLKEM768` | hybrid X25519 + ML-KEM-768 | **use this** |
+| `MLKEM1024` | pure ML-KEM, no classical half | avoid — no fallback if lattices break |
+| `X25519Kyber768Draft00` | pre-standard Kyber draft | obsolete, not interoperable with ML-KEM |
+| `X25519` | classical | keep, as fallback |
+| `P-256` / `P-384` / `P-521` | classical | P-521 rarely worth it |
+
+BoringSSL's own default order is `X25519MLKEM768, X25519, P-256, P-384` —
+it excludes P-521, MLKEM1024 and the Kyber draft, which is a useful signal.
+
+The urgency is **harvest-now-decrypt-later**: traffic recorded today can be
+decrypted once a quantum computer exists, and a session's confidentiality is
+settled permanently at the moment it happens. Signatures are not urgent in the
+same way — a forgery must be produced *during* the handshake — which is why PQ
+key exchange matters now and PQ certificates can wait for the WebPKI.
+
+Counterintuitively the cost is **bandwidth, not CPU**: ML-KEM is lattice
+arithmetic and is cheaper than EC scalar multiplication, but its 1184-byte keys
+push the ClientHello past a typical MTU. Full reasoning, including why
+`MLKEM1024` alone is the wrong choice despite a higher security category, is in
+[`examples/tls-hardening.conf`](examples/tls-hardening.conf).
+
 ### Two BoringSSL checkouts, deliberately
 
 This build uses a **dedicated** BoringSSL checkout (`boringssl-nginx`) that
