@@ -210,13 +210,27 @@ Two annotated templates, both with placeholder values:
   headers, and a full walkthrough of **what SSL Labs actually measures and how
   to reach A+** (the answer is one directive, and it commits you to more than
   people expect).
-- **[`examples/anti-ddos.conf`](examples/anti-ddos.conf)** — `limit_req` /
-  `limit_conn` zones, timeout tuning against slowloris, HTTP/2 and HTTP/3 stream
-  caps, and — the part most guides omit — **how to derive your own thresholds
-  from your access log** instead of copying someone else's numbers.
+- **[`examples/anti-ddos.conf`](examples/anti-ddos.conf)** — **two-tier limiting**
+  (per-IP *and* a per-vhost circuit breaker, because per-IP limits alone do
+  nothing against a botnet where every host stays under the threshold), QUIC
+  address validation with `quic_retry`, `max_ranges` against range
+  amplification, `max_headers`, slowloris timeout tuning, HTTP/2 and HTTP/3
+  stream caps, `ssl_reject_handshake` for unknown-Host scanners, and — the part
+  most guides omit — **how to derive your own thresholds from your access log**
+  instead of copying someone else's numbers.
 
 Neither is a drop-in. Rate limits copied from a stranger's blog either throttle
 your users or stop nothing.
+
+> **`anti-ddos.conf` is one layer, not a solution.** nginx only sees traffic
+> that already reached your NIC, survived any XDP/nftables filtering, and
+> completed TCP/QUIC *and* TLS handshakes. A volumetric L3/L4 flood is decided
+> before nginx is consulted, and a TLS handshake flood spends your CPU before
+> any `limit_req` is evaluated — rate limiting acts on requests, and a handshake
+> is not yet a request. The file opens with the full layer diagram and closes
+> with an explicit list of what it does **not** protect against. The
+> complementary half — filtering below nginx — is deliberately unpublished,
+> since a public anti-DDoS ruleset is a public bypass guide.
 
 ---
 

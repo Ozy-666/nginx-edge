@@ -11,7 +11,7 @@ echo -e "\033[1;34m[+] Starting Enterprise Nginx Auto-Update (BoringSSL, Brotli,
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
-# 1. БЭКАП ТЕКУЩЕГО СОСТОЯНИЯ
+# 1. Back up the current state (binary + config) before touching anything
 echo -e "\033[1;33m[*] Creating backups...\033[0m"
 if [ -f /usr/sbin/nginx ]; then
     cp -a /usr/sbin/nginx "/usr/sbin/nginx.backup.${DATE}"
@@ -22,7 +22,7 @@ if [ -d /etc/nginx ]; then
     echo -e "\033[1;32m[+] Config backed up to /root/nginx-build/nginx_conf_backup_${DATE}.tar.gz\033[0m"
 fi
 
-# 2. Обновление ngx_brotli
+# 2. Update ngx_brotli and its submodules
 echo -e "\033[1;33m[*] Updating ngx_brotli...\033[0m"
 if [ ! -d "ngx_brotli" ]; then
     git clone --recursive https://github.com/google/ngx_brotli.git
@@ -70,7 +70,7 @@ ninja -j"$CORES" crypto ssl bssl
 ls libssl.a libcrypto.a >/dev/null || { echo "BoringSSL static libs missing — abort"; exit 1; }
 cd "$BUILD_DIR"
 
-# 4. Скачивание последней Nginx Mainline
+# 4. Download the latest nginx mainline release
 echo -e "\033[1;33m[*] Fetching latest Nginx mainline version...\033[0m"
 LATEST_NGINX=$(curl -sL https://nginx.org/en/download.html | grep -oP 'nginx-\K1\.[0-9]+\.[0-9]+' | head -n 1)
 
@@ -187,11 +187,11 @@ if ! grep -q "SSL_ECH_KEYS_add" src/event/ngx_event_openssl.c; then
     echo -e "\033[1;32m[+] ECH patch applied\033[0m"
 fi
 
-# Убедимся, что папки для кэша существуют
+# Make sure the cache/temp directories exist before configure
 mkdir -p /var/lib/nginx/{body,fastcgi,proxy,scgi,uwsgi}
 chown -R www-data:www-data /var/lib/nginx
 
-# 5. Конфигурация Nginx
+# 5. Configure nginx
 echo -e "\033[1;33m[*] Configuring Nginx...\033[0m"
 ./configure \
     --prefix=/usr/share/nginx \
@@ -232,11 +232,11 @@ echo -e "\033[1;33m[*] Configuring Nginx...\033[0m"
     --with-cc-opt="-I/root/nginx-build/boringssl-nginx/include -O3 -march=znver2 -mtune=znver2 -flto -fstack-protector-strong -DTCP_FASTOPEN=23" \
     --with-ld-opt="/root/nginx-build/boringssl-nginx/build/libssl.a /root/nginx-build/boringssl-nginx/build/libcrypto.a -flto -ljemalloc -lstdc++ -lpthread -ldl -Wl,-z,relro -Wl,-z,now -Wl,-E"
 
-# 6. Сборка
+# 6. Compile
 echo -e "\033[1;33m[*] Compiling Nginx with $CORES threads...\033[0m"
 make -j"$CORES"
 
-# 7. ТЕСТ СВЕЖЕГО БИНАРНИКА ДО УСТАНОВКИ (Safe Update)
+# 7. Test the freshly built binary BEFORE installing it (safe update gate)
 echo -e "\033[1;33m[*] Testing compiled binary against current config...\033[0m"
 if ./objs/nginx -t -c /etc/nginx/nginx.conf -p /usr/share/nginx/; then
     echo -e "\033[1;32m[+] Config test passed! Safe to install.\033[0m"
