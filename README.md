@@ -41,6 +41,7 @@ documented below.
 | [`examples/tls-hardening.conf`](examples/tls-hardening.conf) | TLS 1.3 / HTTP/3 template, and how to score A+ on SSL Labs |
 | [`examples/anti-ddos.conf`](examples/anti-ddos.conf) | Rate limiting, connection limits, slowloris defence |
 | [`docs/tls-testing.md`](docs/tls-testing.md) | Testing beyond SSL Labs - what it misses and what covers it |
+| [`docs/http2-body-preread-trap.md`](docs/http2-body-preread-trap.md) | **`http2_body_preread_size` below 65535 silently breaks every HTTP/2 POST** |
 
 ---
 
@@ -221,6 +222,28 @@ Two annotated templates, both with placeholder values:
 
 Neither is a drop-in. Rate limits copied from a stranger's blog either throttle
 your users or stop nothing.
+
+### A hardening setting that silently breaks HTTP/2 POST
+
+Worth pulling out of the examples, because it cost a live deployment three to
+four months of partial outage before anyone noticed:
+
+**`http2_body_preread_size` must stay at 65535 or above.** It looks like an
+obvious memory control, but it is *also* the HTTP/2 `INITIAL_WINDOW_SIZE` nginx
+advertises - and `ngx_http_v2.c:1300` refuses **every HTTP/2 stream carrying a
+body** when it is set below `NGX_HTTP_V2_DEFAULT_WINDOW` (65535). Every POST over
+h2 fails, on every path.
+
+It hides almost perfectly: `nginx -t` passes, GET works, HTTP/1.1 and HTTP/3 POST
+work, and the reason is logged at `INFO` - below any production log level.
+Clients get a retryable `REFUSED_STREAM` and quietly retry forever.
+
+Measured on the affected host: **~1,240 refused streams/hour** from a handful of
+distinct clients, several stuck in retry loops. The anti-flood setting was
+*generating* flood-shaped traffic. Fixing it cost **+2.5 MB RSS**.
+
+Full analysis, the source excerpts, and how to measure it on your own server:
+[`docs/http2-body-preread-trap.md`](docs/http2-body-preread-trap.md).
 
 > **`anti-ddos.conf` is one layer, not a solution.** nginx only sees traffic
 > that already reached your NIC, survived any XDP/nftables filtering, and
