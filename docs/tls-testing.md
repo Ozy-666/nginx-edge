@@ -137,6 +137,53 @@ Relevant if you run your own resolver or authoritative zone:
 - **[Zonemaster](https://zonemaster.net/)** — run by IIS and AFNIC; thorough
   delegation and zone correctness checks.
 
+## When scanners disagree: a worked example
+
+Automated graders apply generic heuristics, and a deliberate configuration can
+trip them. A real case from this deployment:
+
+**Hardenize reported:** *"Reconfigure server to use forward secrecy and
+authenticated encryption … the cipher suites providing forward secrecy (ECDHE or
+DHE) and authenticated encryption (GCM or CHACHA20) are at the top. The server
+must also be configured to select the best-available suite."*
+
+**testssl.sh, on the same host:**
+
+```
+TLSv1.2 (server order -- server prioritizes ChaCha ciphers when preferred by clients)
+ xc02b   ECDHE-ECDSA-AES128-GCM-SHA256   ECDH 384   AESGCM     128
+ xcca9   ECDHE-ECDSA-CHACHA20-POLY1305   ECDH 384   ChaCha20   256
+
+ Has server cipher order?     yes (OK) -- only for < TLS 1.3
+```
+
+Every suite offered is already ECDHE (forward secrecy) and AEAD (GCM or
+ChaCha20). There is no CBC suite, no static-RSA key exchange, and nothing weaker
+to promote above anything else. Server cipher order is enforced.
+
+What triggered the warning is BoringSSL's **equal-preference group**:
+
+```nginx
+ssl_ciphers '[ECDHE-ECDSA-AES128-GCM-SHA256|ECDHE-ECDSA-CHACHA20-POLY1305]:...';
+```
+
+The bracket declares those two suites equally acceptable, so the client picks
+between them while the server still controls the ordering of everything else.
+testssl.sh recognises the pattern by name. A generic scanner sees only that the
+negotiated suite changes with client order, and concludes the server is not
+expressing a preference — it cannot distinguish *"the server has no opinion"*
+from *"the server deliberately declared these two equivalent."*
+
+The configuration is correct as it stands, and "fixing" it would be a
+regression: forcing strict server preference pushes clients without AES
+hardware onto AES-GCM instead of ChaCha20-Poly1305, costing performance for zero
+security benefit, since both suites are ECDHE + AEAD.
+
+**The general lesson:** a scanner finding is a hypothesis, not a verdict.
+Reproduce it with a tool that shows you the actual negotiation before changing
+anything. Configuring to satisfy a grader rather than to protect users is how
+deployments get slower and no safer.
+
 ## A practical routine
 
 1. `testssl.sh` locally on every config change — fast, private, catches
