@@ -1,0 +1,24 @@
+# Build artefacts and sources fetched at build time — never committed.
+nginx-*.tar.gz
+nginx-*.tar.gz.asc
+nginx-1.*/
+boringssl-nginx/
+ngx_brotli/
+
+# Throwaway PGP keyring created by nginx-update.sh
+.nginx-keyring/
+
+# Local backups produced by the update script
+nginx_conf_backup_*.tar.gz
+nginx.backup.*
+*.log
+
+# Never publish real configuration or key material
+nginx.conf
+sites-enabled/
+sites-available/
+*.pem
+*.key
+*.crt
+ech*.pem
+quic_key.bin
