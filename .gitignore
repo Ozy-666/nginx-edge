@@ -1,4 +1,4 @@
-# Build artefacts and sources fetched at build time — never committed.
+# Build artefacts and sources fetched at build time - never committed.
 nginx-*.tar.gz
 nginx-*.tar.gz.asc
 nginx-1.*/

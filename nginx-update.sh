@@ -35,7 +35,7 @@ else
     cd ..
 fi
 
-# 3. BoringSSL for nginx — DEDICATED dir (boringssl-nginx), separate from the
+# 3. BoringSSL for nginx - DEDICATED dir (boringssl-nginx), separate from the
 # shared ./boringssl used with unbound. Grabs the LATEST tagged BoringSSL
 # release from GitHub automatically (Google tags often), so there is no pin to
 # maintain. Freshness over strict reproducibility, by choice: the pre-install
@@ -48,7 +48,7 @@ echo -e "\033[1;33m[*] Resolving latest BoringSSL release tag...\033[0m"
 BORING_TAG=$(git ls-remote --tags --sort=-v:refname "$BORING_REPO" 2>/dev/null \
     | grep -oE 'refs/tags/[0-9]+\.[0-9]+\.[0-9]+$' | sed 's#refs/tags/##' | head -n1)
 if [ -z "$BORING_TAG" ]; then
-    echo -e "\033[1;31m[-] Could not resolve a BoringSSL release tag — abort\033[0m"; exit 1
+    echo -e "\033[1;31m[-] Could not resolve a BoringSSL release tag - abort\033[0m"; exit 1
 fi
 echo -e "\033[1;32m[+] Latest BoringSSL release: ${BORING_TAG}\033[0m"
 if [ ! -d "$BORING_DIR/.git" ]; then
@@ -67,7 +67,7 @@ echo -e "\033[1;32m[+] BoringSSL (nginx) at $(git describe --tags 2>/dev/null ||
 rm -rf build && mkdir build && cd build
 cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
 ninja -j"$CORES" crypto ssl bssl
-ls libssl.a libcrypto.a >/dev/null || { echo "BoringSSL static libs missing — abort"; exit 1; }
+ls libssl.a libcrypto.a >/dev/null || { echo "BoringSSL static libs missing - abort"; exit 1; }
 cd "$BUILD_DIR"
 
 # 4. Download the latest nginx mainline release
@@ -82,13 +82,13 @@ fi
 echo -e "\033[1;32m[+] Target Nginx version: $LATEST_NGINX\033[0m"
 
 # nginx.org publishes a detached PGP signature (.asc) for every release but does
-# NOT publish a .sha256 — so unlike the unbound scripts, PGP is the only integrity
+# NOT publish a .sha256 - so unlike the unbound scripts, PGP is the only integrity
 # check available and it is therefore FATAL rather than best-effort.
 #
 # Keys are fetched from https://nginx.org/keys/ and accepted only if their
 # fingerprint is in the pinned allowlist below, so a compromised keys page cannot
 # introduce a new signer. Import happens into a throwaway keyring under the build
-# dir — root's real GNUPGHOME is never touched.
+# dir - root's real GNUPGHOME is never touched.
 #
 # Refresh the list from https://nginx.org/en/pgp_keys.html when nginx adds a
 # maintainer; an unknown signer is treated as a failure, not a warning.
@@ -107,16 +107,16 @@ verify_nginx_tarball() {
     local keyring="${BUILD_DIR}/.nginx-keyring"
 
     if [ "${NGINX_SKIP_PGP:-0}" = "1" ]; then
-        echo -e "\033[1;31m[!] NGINX_SKIP_PGP=1 — tarball signature NOT verified\033[0m"
+        echo -e "\033[1;31m[!] NGINX_SKIP_PGP=1 - tarball signature NOT verified\033[0m"
         return 0
     fi
     command -v gpg >/dev/null 2>&1 || {
-        echo -e "\033[1;31m[-] gpg not installed — cannot verify tarball. Install gnupg, or re-run with NGINX_SKIP_PGP=1 to accept the risk.\033[0m"
+        echo -e "\033[1;31m[-] gpg not installed - cannot verify tarball. Install gnupg, or re-run with NGINX_SKIP_PGP=1 to accept the risk.\033[0m"
         return 1; }
 
     echo -e "\033[1;33m[*] Verifying PGP signature...\033[0m"
     curl -fsSL --max-time 60 -o "${tarball}.asc" "${NGINX_URL}/nginx-${version}.tar.gz.asc" || {
-        echo -e "\033[1;31m[-] Could not download the .asc signature — abort\033[0m"; return 1; }
+        echo -e "\033[1;31m[-] Could not download the .asc signature - abort\033[0m"; return 1; }
 
     # Throwaway keyring, rebuilt from scratch each run.
     rm -rf "$keyring"; mkdir -p "$keyring"; chmod 700 "$keyring"
@@ -130,7 +130,7 @@ verify_nginx_tarball() {
         while read -r fpr; do
             [ -z "$fpr" ] && continue
             printf '%s\n' "${NGINX_KEY_FPRS[@]}" | grep -qx "$fpr" || {
-                echo -e "\033[1;31m[!] Unpinned key on nginx.org/keys/${keyfile}.key: ${fpr} — refusing to import\033[0m"
+                echo -e "\033[1;31m[!] Unpinned key on nginx.org/keys/${keyfile}.key: ${fpr} - refusing to import\033[0m"
                 rejected=1; }
         done < <(gpg --homedir "$keyring" --with-colons --import-options show-only \
                      --import "${keyring}/${keyfile}.key" 2>/dev/null \
@@ -140,21 +140,21 @@ verify_nginx_tarball() {
             && imported=$((imported + 1))
     done
     [ "$imported" -gt 0 ] || {
-        echo -e "\033[1;31m[-] No trusted nginx signing keys could be imported — abort\033[0m"; return 1; }
+        echo -e "\033[1;31m[-] No trusted nginx signing keys could be imported - abort\033[0m"; return 1; }
 
     local gpg_out
     gpg_out=$(gpg --homedir "$keyring" --status-fd 1 --verify \
                   "${tarball}.asc" "$tarball" 2>/dev/null) || {
-        echo -e "\033[1;31m[-] PGP VERIFICATION FAILED — the tarball is NOT what nginx published. Aborting.\033[0m"
+        echo -e "\033[1;31m[-] PGP VERIFICATION FAILED - the tarball is NOT what nginx published. Aborting.\033[0m"
         echo "$gpg_out"; return 1; }
 
     # A good signature is not enough: confirm the signer is one of the pinned keys.
     local signer
     signer=$(printf '%s\n' "$gpg_out" | awk '/VALIDSIG/{print $3; exit}')
     printf '%s\n' "${NGINX_KEY_FPRS[@]}" | grep -qx "$signer" || {
-        echo -e "\033[1;31m[-] Good signature, but from an UNPINNED key ${signer} — abort\033[0m"; return 1; }
+        echo -e "\033[1;31m[-] Good signature, but from an UNPINNED key ${signer} - abort\033[0m"; return 1; }
 
-    echo -e "\033[1;32m[+] PGP verified — signed by ${signer}\033[0m"
+    echo -e "\033[1;32m[+] PGP verified - signed by ${signer}\033[0m"
     rm -rf "$keyring"
     return 0
 }
@@ -171,7 +171,7 @@ if [ ! -d "nginx-$LATEST_NGINX" ]; then
     tar -xf "nginx-$LATEST_NGINX.tar.gz"
     rm -f "nginx-$LATEST_NGINX.tar.gz" "nginx-$LATEST_NGINX.tar.gz.asc"
 else
-    echo -e "\033[1;33m[*] nginx-$LATEST_NGINX already extracted — skipping download and PGP check\033[0m"
+    echo -e "\033[1;33m[*] nginx-$LATEST_NGINX already extracted - skipping download and PGP check\033[0m"
 fi
 
 cd "nginx-$LATEST_NGINX"
@@ -183,7 +183,7 @@ cd "nginx-$LATEST_NGINX"
 if ! grep -q "SSL_ECH_KEYS_add" src/event/ngx_event_openssl.c; then
     echo -e "\033[1;33m[*] Applying BoringSSL ECH patch...\033[0m"
     patch -p1 < /root/nginx-build/ech-boringssl.patch \
-        || { echo -e "\033[1;31m[-] ECH patch failed to apply — abort\033[0m"; exit 1; }
+        || { echo -e "\033[1;31m[-] ECH patch failed to apply - abort\033[0m"; exit 1; }
     echo -e "\033[1;32m[+] ECH patch applied\033[0m"
 fi
 
@@ -257,7 +257,7 @@ if ! ./objs/nginx -V 2>&1 | grep -q "BoringSSL"; then
     exit 1
 fi
 
-# 8. Hot upgrade — zero downtime binary swap
+# 8. Hot upgrade - zero downtime binary swap
 echo -e "\033[1;33m[*] Installing new binary...\033[0m"
 make install
 
