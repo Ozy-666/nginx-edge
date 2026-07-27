@@ -5,9 +5,12 @@ anti-flood measure, nginx is silently refusing every HTTP/2 request that carries
 a body.** Every POST, every PUT, every RFC 8484 DoH POST. `nginx -t` passes, no
 error appears at your log level, and GET requests work perfectly.
 
-This was found on a live resolver where the value had been set to `16k` for
-roughly three to four months. It had been tested from several phones and looked
-fine, because the failure only shows up on one protocol-and-method combination.
+This was found on a live resolver where the value had been set to `16k`. The
+oldest surviving configuration backup containing it is dated five weeks before
+the fix; nothing earlier survives, and because the refusal never reaches a log
+file at normal levels there is no record from which to bound it further. It had
+been tested from several phones and looked fine, because the failure only shows
+up on one protocol-and-method combination.
 
 ## Symptoms
 
@@ -123,10 +126,11 @@ curl -so /dev/null -w '%{http_code} %{http_version}\n' --http3-only -X POST --da
 
 ## Measured impact and cost
 
-On the deployment where this was found, a 7-minute INFO window recorded **145
-refused streams from 9 distinct real client IPs**, roughly 1,240/hour. Individual
-clients were **retry-looping** rather than falling back - 63 attempts from a
-single address in seven minutes.
+On the deployment where this was found, an 8-minute INFO window recorded **211
+refused streams from 10 distinct real client IPs**, roughly 1,590/hour.
+Individual clients were **retry-looping** rather than falling back - 115 attempts
+from a single address, and 36 from the next, so the distribution is dominated by
+whichever client has the most aggressive retry policy.
 
 That last detail is worth sitting with: the setting was chosen to reduce load
 under flood, and it was *generating* flood-shaped retry traffic from legitimate
