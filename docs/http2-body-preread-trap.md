@@ -12,6 +12,12 @@ file at normal levels there is no record from which to bound it further. It had
 been tested from several phones and looked fine, because the failure only shows
 up on one protocol-and-method combination.
 
+> This page is the terse reference. If you would rather read the whole story -
+> why the value was lowered in the first place, what the refusals cost, and a
+> 60-second reproduction you can run on localhost - there is a longer write-up
+> at
+> [dnsdoh.art/guides/nginx-http2-preread-refused-stream.html](https://dnsdoh.art/guides/nginx-http2-preread-refused-stream.html).
+
 ## Symptoms
 
 | Request | Result |
