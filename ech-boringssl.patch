@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# Copyright (c) 2026 Ozy-666 (https://dnsdoh.art)
+#
+# ech-boringssl.patch — Server-side ECH (Encrypted Client Hello) support 
+# for BoringSSL builds in Nginx (src/event/ngx_event_openssl.c).
 --- a/src/event/ngx_event_openssl.c
 +++ b/src/event/ngx_event_openssl.c
 @@ -13,6 +13,12 @@
