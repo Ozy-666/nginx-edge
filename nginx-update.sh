@@ -189,6 +189,33 @@ if ! grep -q "SSL_ECH_KEYS_add" src/event/ngx_event_openssl.c; then
     echo -e "\033[1;32m[+] ECH patch applied\033[0m"
 fi
 
+# QUIC handshake recovery, nginx issue #1616 (reported by us, still open
+# upstream): lost Initial CRYPTO is never retransmitted once the congestion
+# window is exhausted, which deadlocks the handshake when the ServerHello spans
+# two Initial packets - the case post-quantum key shares and larger certificate
+# chains make routine. See quic-1616-handshake-congestion.patch for the detail.
+#
+# Build stock nginx instead with NGINX_QUIC_1616_PATCH=0 (e.g. to reproduce a
+# bug against unpatched nginx). The flag only matters for a freshly extracted
+# tree, so remove nginx-$LATEST_NGINX before switching.
+#
+# The guard greps for the patch's comment text, NOT for "ignore_congestion":
+# stock nginx already sets that field in ngx_event_quic_ack.c (PATH_CHALLENGE),
+# so a guard on the identifier would report "already applied" on a stock tree.
+if [ "${NGINX_QUIC_1616_PATCH:-1}" = "1" ]; then
+    if ! grep -q "Lost handshake CRYPTO data must be able to leave" \
+            src/event/quic/ngx_event_quic_ack.c; then
+        echo -e "\033[1;33m[*] Applying QUIC handshake-recovery patch (#1616)...\033[0m"
+        patch -p1 < /root/nginx-build/quic-1616-handshake-congestion.patch \
+            || { echo -e "\033[1;31m[-] #1616 patch failed to apply - abort\033[0m"; exit 1; }
+        echo -e "\033[1;32m[+] #1616 patch applied\033[0m"
+    else
+        echo -e "\033[1;33m[*] #1616 patch already present - skipping\033[0m"
+    fi
+else
+    echo -e "\033[1;33m[!] NGINX_QUIC_1616_PATCH=0 - building STOCK nginx (no #1616 patch)\033[0m"
+fi
+
 # Make sure the cache/temp directories exist before configure
 mkdir -p /var/lib/nginx/{body,fastcgi,proxy,scgi,uwsgi}
 chown -R www-data:www-data /var/lib/nginx

@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# Copyright (c) 2026 Ozy-666 (https://dnsdoh.art)
+#
+# quic-1616-handshake-congestion.patch - let lost handshake CRYPTO data leave
+# when the congestion window is exhausted (nginx issue #1616).
+#
+# This patch MODIFIES nginx. The files it applies to are
+#     Copyright (C) Nginx, Inc. and F5, Inc.
+#     Licensed under the 2-clause BSD License.
+# The copyright above covers only the changes introduced by this patch, not
+# the nginx source it is applied to.
+#
+# Why it exists: when a ServerHello spans two Initial packets (routine with
+# post-quantum key shares and larger certificate chains) and one is lost, the
+# retransmission is blocked by the congestion check forever: bytes in flight
+# are Handshake packets the client cannot decrypt, so cannot acknowledge,
+# until this very CRYPTO data arrives. Two hunks, no struct change -
+# ignore_congestion is an existing upstream bitfield.
+#
+# Reported upstream as https://github.com/nginx/nginx/issues/1616 (open).
+# Applied by nginx-update.sh with `patch -p1`; NGINX_QUIC_1616_PATCH=0 builds
+# stock nginx. Everything above the first `---` is ignored by patch(1).
+--- a/src/event/quic/ngx_event_quic_ack.c	2026-07-15 19:03:14.000000000 +0300
++++ b/src/event/quic/ngx_event_quic_ack.c	2026-07-30 22:35:21.290426270 +0300
+@@ -841,6 +841,23 @@
+             /* fall through */
+ 
+         default:
++            /*
++             * RFC 9002, 7.  Congestion Control
++             *
++             * Lost handshake CRYPTO data must be able to leave even when the
++             * congestion window is exhausted.  Otherwise a handshake that
++             * loses one Initial packet of a two-packet ServerHello deadlocks:
++             * bytes_in_flight is held up by Handshake packets the peer cannot
++             * decrypt until this very CRYPTO data arrives, so it can never be
++             * acknowledged, the window never reopens, and the retransmission
++             * is dropped by the congestion check on every attempt.
++             */
++            if (f->type == NGX_QUIC_FT_CRYPTO
++                && ctx->level != NGX_QUIC_ENCRYPTION_APPLICATION)
++            {
++                f->ignore_congestion = 1;
++            }
++
+             ngx_queue_insert_tail(&ctx->frames, &f->queue);
+         }
+ 
+--- a/src/event/quic/ngx_event_quic_output.c	2026-07-15 19:03:14.000000000 +0300
++++ b/src/event/quic/ngx_event_quic_output.c	2026-07-30 22:39:21.869204723 +0300
+@@ -592,7 +592,14 @@
+     {
+         f = ngx_queue_data(q, ngx_quic_frame_t, queue);
+ 
+-        if (ack_only && f->type != NGX_QUIC_FT_ACK) {
++        /*
++         * When the congestion window is exhausted only ACK frames are
++         * normally emitted.  Frames explicitly marked ignore_congestion must
++         * still get out: lost handshake CRYPTO is the case that matters, since
++         * the peer cannot acknowledge anything until it arrives, so the window
++         * would never reopen and the retransmission would be skipped forever.
++         */
++        if (ack_only && f->type != NGX_QUIC_FT_ACK && !f->ignore_congestion) {
+             break;
+         }
+ 

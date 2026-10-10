@@ -4,25 +4,27 @@ Build tooling for a **BoringSSL-linked nginx with HTTP/3, Encrypted Client Hello
 and Brotli**, compiled for AMD Zen 2 - as deployed on the
 [dnsdoh.art](https://dnsdoh.art) edge (AMD EPYC 7542, Debian, KVM VPS).
 
-Currently running **nginx 1.31.3** (mainline) against **BoringSSL
-`0.20260713.0`**, the same BoringSSL release tag used by
+Currently running **nginx 1.31.6** (mainline) against **BoringSSL
+`0.20260929.0`**, the same BoringSSL release tag used by
 [unbound-edge](https://github.com/Ozy-666/unbound-edge).
 
 ```
-nginx 1.31.3  ·  BoringSSL 0.20260713.0  ·  ngx_brotli  ·  jemalloc
+nginx 1.31.6  ·  BoringSSL 0.20260929.0  ·  ngx_brotli  ·  jemalloc
 TLS 1.3 + X25519MLKEM768 · HTTP/3 (QUIC) · ECH · -march=znver2 -flto
 ```
 
 **What this repo is:** an update script that fetches, verifies, builds and
 hot-swaps nginx without downtime; the ECH patch that makes `ssl_ech_file`
-actually work on BoringSSL; and annotated example configuration for TLS
+actually work on BoringSSL; a QUIC handshake-recovery patch for nginx issue
+#1616; and annotated example configuration for TLS
 hardening and L7 DDoS mitigation.
 
 **What this repo is not:** a fork of nginx, and not our production
 configuration. No nginx source is vendored here - `nginx-update.sh` downloads
-the official nginx.org tarball at build time. The single exception to
-"no source changes" is `ech-boringssl.patch`, applied at build time and
-documented below.
+the official nginx.org tarball at build time. The two exceptions to
+"no source changes" are `ech-boringssl.patch` and
+`quic-1616-handshake-congestion.patch`, both applied at build time and
+documented in their headers.
 
 > The live `nginx.conf` is deliberately not published. Rate-limit thresholds,
 > upstream addresses and cache-key structure lose most of their value once
@@ -38,6 +40,7 @@ documented below.
 |---|---|
 | [`nginx-update.sh`](nginx-update.sh) | Fetch → PGP-verify → patch → build → test → hot upgrade |
 | [`ech-boringssl.patch`](ech-boringssl.patch) | Server-side ECH for BoringSSL builds |
+| [`quic-1616-handshake-congestion.patch`](quic-1616-handshake-congestion.patch) | Lost handshake CRYPTO may bypass an exhausted congestion window ([nginx#1616](https://github.com/nginx/nginx/issues/1616), open upstream) |
 | [`examples/tls-hardening.conf`](examples/tls-hardening.conf) | TLS 1.3 / HTTP/3 template, and how to score A+ on SSL Labs |
 | [`examples/anti-ddos.conf`](examples/anti-ddos.conf) | Rate limiting, connection limits, slowloris defence |
 | [`docs/tls-testing.md`](docs/tls-testing.md) | Testing beyond SSL Labs - what it misses and what covers it |
@@ -170,7 +173,9 @@ The script, in order:
    `libcrypto.a` with Ninja.
 4. Resolves the latest nginx mainline version, downloads it, **verifies the PGP
    signature**, extracts.
-5. Applies `ech-boringssl.patch` if not already present.
+5. Applies `ech-boringssl.patch`, then `quic-1616-handshake-congestion.patch`
+   (skip the latter with `NGINX_QUIC_1616_PATCH=0` for a stock build), each
+   only if not already present.
 6. Configures and compiles with `-O3 -march=znver2 -mtune=znver2 -flto`,
    linking jemalloc.
 7. **Gates on the new binary before installing it** - runs `nginx -t` against
@@ -262,19 +267,19 @@ Full analysis, the source excerpts, and how to measure it on your own server:
 Part of the DNS and edge stack behind [dnsdoh.art](https://dnsdoh.art):
 
 ```
-nginx-edge (this repo)   443 HTTPS + HTTP/3, ECH
-AGH-Edge   443 DoH + DoH3 · 853 DoT + DoQ · 53 plain
-  └─> Unbound  127.0.0.1:5353   ← unbound-edge (DNSSEC validation)
-        └─> dnscrypt-proxy  127.0.0.1:5053
-              └─> encrypted upstreams
+nginx      443 DoH + DoH3 (TLS, ECH)   ← this repo
+  └─> dnsdist  also serves 53 plain · 853 DoT + DoQ
+        └─> Unbound  127.0.0.1:5353   ← unbound-edge (DNSSEC validation)
+              └─> DoT  Cloudflare 1.1.1.1:853 · Quad9 9.9.9.10:853
 ```
 
 - **[unbound-edge](https://github.com/Ozy-666/unbound-edge)** - BoringSSL-linked,
   Zen 2-optimised Unbound build tooling and config. Closest sibling to this repo.
-- **[dnscrypt-proxy](https://github.com/Ozy-666/dnscrypt-proxy)** - fork carrying
-  the encrypted-upstream path for this stack.
-- **[AdGuardHome-edge-spec](https://github.com/Ozy-666/AdGuardHome-edge-spec)** -
-  public specification and optimisation logs for the AdGuardHome/dnsproxy layer.
+- **[dnscrypt-proxy](https://github.com/Ozy-666/dnscrypt-proxy)** and
+  **[AdGuardHome-edge-spec](https://github.com/Ozy-666/AdGuardHome-edge-spec)** -
+  archived, read-only. The earlier stack (AdGuardHome front end, dnscrypt-proxy
+  upstream) was replaced by dnsdist and DoT forwarding in Unbound in
+  September-October 2026.
 - **[dns-ultra](https://github.com/Ozy-666/dns-ultra)** - finds the fastest DNS
   resolvers for a dnscrypt-proxy setup using real queries rather than synthetic
   pings.
