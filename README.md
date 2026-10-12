@@ -268,11 +268,14 @@ Part of the DNS and edge stack behind [dnsdoh.art](https://dnsdoh.art):
 
 ```
 nginx      443 DoH + DoH3 (TLS, ECH)   ← this repo
-  └─> dnsdist  also serves 53 plain · 853 DoT + DoQ
+  └─> dnsdist  also serves 53 plain · 853 DoT + DoQ   ← dnsdoh-edge
         └─> Unbound  127.0.0.1:5353   ← unbound-edge (DNSSEC validation)
               └─> DoT  Cloudflare 1.1.1.1:853 · Quad9 9.9.9.10:853
 ```
 
+- **[dnsdoh-edge](https://github.com/Ozy-666/dnsdoh-edge)** - the dnsdist build and
+  configuration behind this nginx, the blocklist compiler, the Unbound drop-ins and the
+  parity tests.
 - **[unbound-edge](https://github.com/Ozy-666/unbound-edge)** - BoringSSL-linked,
   Zen 2-optimised Unbound build tooling and config. Closest sibling to this repo.
 - **[dnscrypt-proxy](https://github.com/Ozy-666/dnscrypt-proxy)** and
